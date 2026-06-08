@@ -1,6 +1,6 @@
-# 🌦️ Trạm Thời Tiết Thông Minh với Machine Learning
+# 🌦️ Trạm Thời Tiết Thông Minh với Machine Learning (Edge AI)
 
-**Hệ thống IoT hoàn chỉnh - Dự đoán thời tiết trực tiếp trên Microcontroller bằng Machine Learning**
+**Hệ thống IoT hoàn chỉnh - Dự đoán thời tiết trực tiếp trên Vi điều khiển ESP8266 bằng thuật toán Random Forest**
 
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen) ![License](https://img.shields.io/badge/License-MIT-blue) ![Platform](https://img.shields.io/badge/Platform-ESP8266-orange)
 
@@ -8,560 +8,261 @@
 
 ## 🎯 Tổng Quan Dự Án
 
-Dự án này xây dựng một **trạm thời tiết IoT thông minh** trên vi điều khiển **ESP8266 NodeMCU** với khả năng:
+Dự án này xây dựng một **trạm thời tiết IoT thông minh** tích hợp công nghệ **Edge AI** chạy trên vi điều khiển **ESP8266 NodeMCU v2**. Hệ thống thu thập dữ liệu môi trường thời gian thực, sau đó thực hiện suy diễn ngay trên chip bằng mô hình Machine Learning mà không cần kết nối Cloud hay các dịch vụ bên thứ ba.
 
-✅ **Đọc dữ liệu thực tế** từ 4 cảm biến môi trường  
-✅ **Dự đoán thời tiết** sử dụng mô hình Machine Learning (Random Forest)  
-✅ **Hiển thị kết quả** trực tiếp trên màn hình OLED  
-✅ **Chạy độc lập** - Không cần kết nối Cloud, suy diễn ML ngay trên thiết bị  
-✅ **Ghi log dữ liệu** qua Serial Monitor để giám sát  
-
-### 🚀 Điểm Nổi Bật
-- **Edge AI**: Chạy mô hình ML trực tiếp trên microcontroller 80MHz
-- **Real-time**: Dự đoán mỗi 1 giây, bộ lọc làm mịn 5 mẫu
-- **Tự động**: Lấy dữ liệu NASA POWER API, fallback dữ liệu tổng hợp
-- **Tiết kiệm nguồn**: Chỉ sử dụng 35.8% RAM, 27.6% Flash
-- **Dễ triển khai**: Toàn bộ quy trình từ huấn luyện đến upload trong vài phút
+### 🚀 Đặc Điểm Nổi Bật
+- **Edge AI / TinyML:** Chạy trực tiếp mô hình Random Forest Classifier (từ thư viện `scikit-learn` đã được C-code hóa qua `m2cgen`) trên CPU 32-bit Xtensa 80MHz.
+- **Thời Gian Thực (Real-time):** Cập nhật dữ liệu và dự đoán thời tiết mỗi 1 giây.
+- **Bộ Lọc Làm Mịn (Voting Filter):** Áp dụng thuật toán bầu chọn đa số (Majority Vote) trên cửa sổ trượt 5 mẫu dự đoán gần nhất để loại bỏ nhiễu cảm biến, giúp kết quả hiển thị cực kỳ ổn định.
+- **Tiết Kiệm Tài Nguyên:** Sử dụng tối ưu bộ nhớ vi điều khiển (chỉ ~35.8% RAM và ~27.6% Flash), thời gian suy diễn mô hình cực nhanh chỉ khoảng 5-10ms.
+- **Tự Động Huấn Luyện:** Kèm theo script Python tự động tải dữ liệu khí tượng thực tế từ **NASA POWER API** (hoặc tự động tạo dữ liệu mô phỏng dự phòng khi mất mạng) để huấn luyện và tự sinh file header C++ (`model.h`).
 
 ---
 
 ## 📂 Cấu Trúc Dự Án
 
-```
+```text
 he-thong-nhung/
 │
-├── firmware/                          # Code nhúng cho ESP8266
-│   ├── platformio.ini                # Cấu hình PlatformIO
+├── firmware/                          # Mã nguồn nhúng cho ESP8266 (PlatformIO Project)
+│   ├── platformio.ini                # File cấu hình PlatformIO và quản lý thư viện
 │   ├── include/
-│   │   ├── model.h                   # Mô hình ML (tự động sinh)
-│   │   ├── display.h                 # Driver màn hình OLED
-│   │   └── sensor_hal.h              # Tầng trừu tượng cảm biến
+│   │   ├── model.h                   # File mô hình ML chứa hàm predict() (sinh tự động từ Python)
+│   │   ├── display.h                 # Khai báo các hàm điều khiển màn hình OLED
+│   │   └── sensor_hal.h              # Khai báo cấu trúc dữ liệu và tầng trừu tượng cảm biến
 │   └── src/
-│       ├── main.cpp                  # Vòng lặp chính
-│       ├── display.cpp               # Triển khai hiển thị
-│       └── sensor_hal.cpp            # Đọc cảm biến
+│       ├── main.cpp                  # Luồng xử lý chính: Khởi tạo, đọc cảm biến, dự đoán & lọc nhiễu
+│       ├── display.cpp               # Triển khai vẽ giao diện lên màn hình OLED SSD1306
+│       └── sensor_hal.cpp            # Đọc dữ liệu từ DHT11, BMP180, BH1750
 │
-├── training/
-│   └── train_model.py                # Huấn luyện + export model
+├── training/                          # Thư mục huấn luyện mô hình ML
+│   └── train_model.py                # Script Python tải dữ liệu NASA, huấn luyện mô hình & xuất ra C++
 │
-└── README.md                          # Tài liệu (file này)
+├── MODEL_DESCRIPTION.md               # Mô tả chi tiết giải thuật và phân tích lỗi mô hình
+└── README.md                          # Hướng dẫn sử dụng dự án (File này)
 ```
 
 ---
 
-## 🔌 Phần Cứng
+## 🔌 Phần Cứng & Kết Nối
 
-### Vi Điều Khiển
-- **ESP8266 NodeMCU v2**
-- Processor: Xtensa 10.3.0 @ 80MHz
-- Memory: 80KB RAM, 4MB Flash
-- Giao tiếp: Serial USB Micro
+Hệ thống sử dụng **3 cảm biến vật lý** để thu thập **4 thông số môi trường** đầu vào cho mô hình Machine Learning:
 
-### Các Cảm Biến
-| Cảm Biến | Chức Năng | Giao Tiếp | Chân | Nhà Cung Cấp |
-|---------|---------|---------|-----|---------|
-| DHT11 | Nhiệt độ & Độ ẩm | Digital 1-wire | D3 | ASAIR |
-| BMP180 | Áp suất barometric | I2C | D1/D2 | Bosch |
-| BH1750 | Cường độ ánh sáng | I2C (0x3C) | D1/D2 | Rohm |
-| SSD1306 | Màn hình OLED 128×64 | I2C (0x3C) | D1/D2 | Solomon Systech |
+### 1. Thành Phần Phần Cứng
 
-### 🔌 Sơ Đồ Nối Dây
+| Thiết bị / Module | Tên linh kiện | Giao tiếp | Địa chỉ I2C | Vai trò trong hệ thống |
+| :--- | :--- | :--- | :--- | :--- |
+| **Vi điều khiển** | ESP8266 NodeMCU v2 | - | - | Xử lý trung tâm, chạy mô hình ML và hiển thị dữ liệu |
+| **Cảm biến nhiệt/ẩm** | DHT11 | Digital 1-wire | - | Đo nhiệt độ (°C) và độ ẩm tương đối (%) |
+| **Cảm biến áp suất** | BMP180 | I2C | **0x77** | Đo áp suất khí quyển tuyệt đối (hPa) |
+| **Cảm biến ánh sáng** | BH1750 | I2C | **0x23** | Đo cường độ ánh sáng môi trường (Lux) |
+| **Màn hình hiển thị** | SSD1306 OLED (128x64) | I2C | **0x3C** | Hiển thị các thông số thời gian thực và kết quả dự đoán thời tiết |
 
+### 2. Sơ Đồ Đấu Nối Pinout
+
+Tất cả các thiết bị I2C (BMP180, BH1750, SSD1306) dùng chung đường bus I2C trên ESP8266 (chân D1 và D2). Cảm biến DHT11 sử dụng một chân kỹ thuật số độc lập (D3).
+
+```text
+                     ┌───────────────────────────────────────┐
+                     │          ESP8266 NodeMCU v2           │
+                     └─┬─────────┬─────────┬─────────┬───────┘
+                       │         │         │         │
+                      3V3       GND       D1        D2   D3
+                       │         │        (SCL)     (SDA)│
+                       ▼         ▼         │         │   ▼
+                     ┌─────────────┐       │         │ ┌──────────────┐
+                     │ Nguồn chung │       │         │ │ DHT11 Sensor │
+                     └─────────────┘       │         │ └──────────────┘
+                       │         │         │         │
+                       ▼         ▼         ▼         ▼
+                     ┌─────────────────────────────────┐
+                     │ Đường Bus I2C                   │
+                     ├─────────────────────────────────┤
+                     │ 🌐 SSD1306 OLED (Địa chỉ 0x3C)  │
+                     │ 🌐 BH1750 Light (Địa chỉ 0x23)  │
+                     │ 🌐 BMP180 Press (Địa chỉ 0x77)  │
+                     └─────────────────────────────────┘
 ```
-┌──────────────────────────────┐
-│    ESP8266 NodeMCU v2        │
-└──────────────────────────────┘
-     │         │         │         │
-     │         │         │         │
-    D3        D1        D2       3V3, GND
-     │         │         │         │
-     ▼         ▼         ▼         ▼
-   ┌────────┐ ┌────┐  ┌────┐  ┌─────┐
-   │ DHT11  │ │I2C │  │I2C │  │Power│
-   └────────┘ └────┘  └────┘  └─────┘
-             /  │  \
-            /   │   \
-         BMP  BH1750 SSD1306
-         180
-```
 
-**Chi tiết kết nối:**
-- **D3 (GPIO0)** ← DHT11 (data pin)
-- **D1 (GPIO5/SCL)** ← BMP180, BH1750, SSD1306 (SCL)
-- **D2 (GPIO4/SDA)** ← BMP180, BH1750, SSD1306 (SDA)
-- **3V3** ← VCC của tất cả cảm biến
-- **GND** ← GND của tất cả cảm biến
+**Chi tiết kết nối dây cụ thể:**
+- **VCC (3V3)** của DHT11, BMP180, BH1750, SSD1306 nối với chân **3V3** của ESP8266.
+- **GND** của DHT11, BMP180, BH1750, SSD1306 nối với chân **GND** của ESP8266.
+- **DHT11 Data Pin** nối với chân **D3** (GPIO0) trên ESP8266.
+- **SCL Pins** (của BMP180, BH1750, SSD1306) nối chung vào chân **D1** (GPIO5) của ESP8266.
+- **SDA Pins** (của BMP180, BH1750, SSD1306) nối chung vào chân **D2** (GPIO4) của ESP8266.
 
 ---
 
 ## 🤖 Mô Hình Machine Learning
 
-### Thuật Toán & Kiến Trúc
-```
-Algorithm:          Random Forest Classifier
-Framework:          scikit-learn (Python)
-Export Tool:        m2cgen (m2c.export_to_c)
-Số cây:             5
-Độ sâu tối đa:      3 cấp
-Random State:       42
-```
+Mô hình được thiết kế để phân loại thời tiết thành **3 lớp**:
+- **☀️ Lớp 0 (Sunny - Nắng):** Cường độ ánh sáng cao, độ ẩm thấp, áp suất khí quyển ổn định.
+- **🌧️ Lớp 1 (Rain - Mưa):** Cường độ ánh sáng thấp, độ ẩm rất cao, áp suất giảm sâu.
+- **☁️ Lớp 2 (Cloudy - Mây):** Điều kiện trung bình, âm u hoặc thời tiết chuyển giao.
 
-### Dữ Liệu Huấn Luyện
-- **Nguồn:** NASA POWER API (dữ liệu vệ tinh thực tế 2023-2024)
-- **Vị trí:** Hà Nội, TPHCM, Tokyo, New York, Sydney
-- **Tổng mẫu:** 900 quan sát (hoặc dữ liệu tổng hợp nếu API fail)
-- **Tính năng:**
-  - Temperature (°C): Nhiệt độ
-  - Humidity (%): Độ ẩm tương đối
-  - Pressure (hPa): Áp suất barometric
-  - Solar Radiation (W/m²) → Light (Lux): Cường độ ánh sáng
+### 1. Kiến Trúc & Cấu Hình Mô Hình
+- **Thuật toán:** Random Forest Classifier (Rừng cây quyết định).
+- **Số lượng cây quyết định (`n_estimators`):** 5 cây.
+- **Độ sâu tối đa của cây (`max_depth`):** 3 tầng (nhằm hạn chế dung lượng RAM/Flash và tránh quá khớp - overfitting).
+- **Tham số sinh ngẫu nhiên (`random_state`):** 42.
 
-### Kết Quả Huấn Luyện
-```
-Độ chính xác:       100% trên dữ liệu huấn luyện
-Tầm quan trọng:
-  ├─ Ánh sáng:      49.7%  (tính năng quan trọng nhất)
-  ├─ Độ ẩm:         41.1%
-  ├─ Áp suất:        9.2%
-  └─ Nhiệt độ:       0.0%
-```
+### 2. Dữ Liệu Huấn Luyện (Training Data)
+- **Nguồn dữ liệu:** Tự động gọi API của **NASA POWER** để lấy dữ liệu khí tượng thực tế của 5 thành phố lớn (Hà Nội, TP.HCM, Tokyo, New York, Sydney) trong 2 năm 2023 - 2024.
+- **Dữ liệu dự phòng:** Nếu kết nối API bị lỗi, chương trình sẽ tự động tạo ra **900 mẫu dữ liệu giả lập chất lượng cao** (chia đều 300 mẫu cho mỗi lớp dựa trên phân phối chuẩn đa biến thực tế) để đảm bảo mô hình luôn được huấn luyện thành công.
+- **Số mẫu huấn luyện trong file model mẫu:** 300 mẫu quan sát.
+- **Độ chính xác huấn luyện:** **100.00%** (theo comment ghi nhận trong `model.h`).
 
-### Các Lớp Dự Đoán
-| ID | Tên | Biểu Tượng | Đặc Điểm |
-|----|----|---------|---------|
-| **0** | Nắng | ☀️ | Ánh sáng cao (L > 400), độ ẩm thấp (H < 60%) |
-| **1** | Mưa | 🌧️ | Ánh sáng thấp (L < 150), độ ẩm cao (H > 75%) |
-| **2** | Mây | ☁️ | Điều kiện trung bình hoặc thay đổi |
+### 3. Tầm Quan Trọng Của Các Tính Năng (Feature Importance)
+Mô hình tự động học và đánh giá mức độ quan trọng của các thông số đầu vào:
+- **Cường độ ánh sáng (Light):** ~50% (Yếu tố quan trọng nhất để phân biệt ngày/đêm và nắng/mưa).
+- **Độ ẩm (Humidity):** ~39% (Chỉ số quyết định khả năng tạo mưa).
+- **Áp suất khí quyển (Pressure):** ~9% (Chỉ số báo trước sự thay đổi của áp thấp nhiệt đới).
+- **Nhiệt độ (Temperature):** ~2% (Ít đóng vai trò trong việc phân biệt nắng/mưa/mây ở vùng nhiệt đới).
 
 ---
 
-## 💻 Cài Đặt Phần Mềm
+## 💻 Hướng Dẫn Cài Đặt Phần Mềm
 
-### Yêu Cầu Tiên Quyết
-- **Python 3.8+** (cài từ python.org)
-- **PlatformIO CLI**
-- **Driver USB CH340/CP2102** cho ESP8266
-- **Git** (tùy chọn)
+### Yêu Cầu Hệ Thống
+1. **Python 3.8+** (có trong PATH hệ thống).
+2. **PlatformIO Core (CLI hoặc tích hợp trong VS Code)**.
+3. Driver USB-to-UART cho ESP8266 (thường là **CH340** hoặc **CP2102** tùy loại board mạch).
 
-### 1️⃣ Cài Đặt Dependencies Python
-
+### Bước 1: Cài Đặt Thư Viện Python
+Mở Terminal/PowerShell và cài đặt các thư viện cần thiết cho việc tải dữ liệu và huấn luyện mô hình:
 ```bash
-# Mở Terminal/PowerShell
-pip install pandas numpy scikit-learn m2cgen platformio
-```
-
-**Giải thích:**
-- `pandas` - Xử lý dữ liệu bảng
-- `numpy` - Tính toán số học
-- `scikit-learn` - Thư viện Machine Learning
-- `m2cgen` - Export model từ Python → C code
-- `platformio` - Build & upload firmware
-
-### 2️⃣ Chuẩn Bị Dự Án
-
-```bash
-# Nếu chưa clone
-git clone https://github.com/your-repo/he-thong-nhung.git
-cd he-thong-nhung
-
-# Hoặc download và extract ZIP, rồi cd vào thư mục
-```
-
----
-
-## 🚀 Hướng Dẫn Chạy
-
-### 📌 Phương Pháp 1: Chạy Toàn Bộ Từ Đầu (Khuyến Nghị)
-
-#### **Bước 1: Huấn Luyện Mô Hình**
-```bash
-cd training
-python train_model.py
-```
-
-**Kết quả dự kiến:**
-```
-======================================================================
-STEP 1: Fetching Real Weather Data from NASA POWER API
-======================================================================
-  Fetching data from NASA POWER API (lat=21.0285, lon=105.8542)...
-  Fetching data from NASA POWER API (lat=10.7769, lon=106.7009)...
-  ...
-  Total samples collected: 730
-
-======================================================================
-STEP 2: Training Random Forest Model
-======================================================================
-Model Accuracy: 99.86% on 730 samples
-Feature Importance:
-  Temperature: 2.1%
-  Humidity: 38.9%
-  Pressure: 8.8%
-  Light: 50.2%
-
-======================================================================
-STEP 3: Exporting Model to C Code
-======================================================================
-[m2cgen] Exporting model...
-
-======================================================================
-STEP 4: Generating C Header File
-======================================================================
-✓ Model exported to: .../firmware/include/model.h
-✓ File size: 3415 bytes
-✓ Ready for ESP8266 deployment!
-```
-
-**Thời gian:** ~10-30 giây (tùy tốc độ internet)
-
----
-
-#### **Bước 2: Biên Dịch Firmware**
-```bash
-cd ../firmware
-pio run
-```
-
-**Kết quả dự kiến:**
-```
-Processing nodemcuv2 (platform: espressif8266; board: nodemcuv2; framework: arduino)
-...
-RAM:   [====      ]  35.8% (used 29320 bytes from 81920 bytes)
-Flash: [===       ]  27.6% (used 288123 bytes from 1044464 bytes)
-...
-========================= [SUCCESS] Took 7.55 seconds =========================
-```
-
-**Thời gian:** ~30-60 giây
-
----
-
-#### **Bước 3: Upload Lên ESP8266**
-
-Kết nối ESP8266 qua USB, sau đó:
-
-```bash
-pio run -t upload
-```
-
-**Kết quả dự kiến:**
-```
-Looking for upload port...
-Auto-detected: COM10
-Uploading .pio\build\nodemcuv2\firmware.bin
-esptool.py v3.0
-Serial port COM10
-Connecting....
-Chip is ESP8266EX
-...
-Wrote 292240 bytes (213956 compressed) at 0x00000000 in 18.9 seconds
-Hash of data verified.
-Leaving...
-Hard resetting via RTS pin...
-========================= [SUCCESS] Took 23.45 seconds =========================
-```
-
-**Thời gian:** ~20-30 giây
-
-> **Lưu ý:** Cổng COM tự động phát hiện. Nếu không thế:
-> ```bash
-> pio device list                    # Xem danh sách cổng
-> pio run -t upload --upload-port COM10   # Upload vào cổng cụ thể
-> ```
-
----
-
-#### **Bước 4: Giám Sát Dữ Liệu Real-Time**
-
-```bash
-pio device monitor -b 115200
-```
-
-**Dữ liệu sẽ hiển thị:**
-```
---- ESP8266 Weather Station ---
-T: 28.5, H: 65.3, P: 1009.2, L: 450.0 → Prediction: Sunny
-T: 28.3, H: 66.1, P: 1009.1, L: 425.3 → Prediction: Sunny
-T: 27.9, H: 78.5, P: 1008.9, L: 125.0 → Prediction: Rain
-T: 28.1, H: 72.3, P: 1009.0, L: 280.5 → Prediction: Cloudy
-```
-
-**Để thoát:** Nhấn `Ctrl+C`
-
----
-
-### 📌 Phương Pháp 2: Nếu Model Đã Có
-
-Nếu file `firmware/include/model.h` đã tồn tại (từ lần chạy trước):
-
-```bash
-cd firmware
-pio run -t upload          # Build & Upload
-pio device monitor         # Giám sát
-```
-
----
-
-### 📌 Phương Pháp 3: Quick Start (3 Terminal Song Song)
-
-**Terminal 1:** Huấn luyện
-```bash
-cd training && python train_model.py
-```
-
-**Terminal 2:** Build & Upload (chạy sau khi Terminal 1 xong)
-```bash
-cd firmware && pio run -t upload
-```
-
-**Terminal 3:** Giám sát (chạy sau khi Terminal 2 xong)
-```bash
-cd firmware && pio device monitor -b 115200
-```
-
----
-
-## 🔧 Các Lệnh Hữu Ích
-
-```bash
-# Xem danh sách cổng COM/Serial
-pio device list
-
-# Biên dịch mà không upload
-pio run
-
-# Upload tới cổng cụ thể
-pio run -t upload --upload-port COM10
-
-# Xóa build artifacts (làm sạch)
-pio run --target clean
-
-# Verbose output (để debug)
-pio run -t upload -v
-
-# Giám sát ở tốc độ khác
-pio device monitor -b 9600
-
-# Xem thông tin dự án
-pio project inspect
-```
-
----
-
-## 📊 Cách Hoạt Động
-
-### Firmware Flow
-
-```
-┌─────────────────────────────┐
-│   1. Khởi Tạo Thiết Bị     │
-│   ├─ DHT11, BMP180, BH1750 │
-│   ├─ Màn hình OLED I2C     │
-│   └─ Serial @115200 baud   │
-└────────────┬────────────────┘
-             │
-             ▼
-      ┌─────────────────┐
-      │  Vòng Lặp 1s    │
-      │ (repeat forever)│
-      └────────┬────────┘
-               │
-    ┌──────────┴──────────┐
-    │                     │
-    ▼                     │
-┌──────────────────────┐  │
-│ 2. Đọc 4 Cảm Biến   │  │
-│  - Temp (DHT11)     │  │
-│  - Humidity (DHT11) │  │
-│  - Pressure (BMP)   │  │
-│  - Light (BH1750)   │  │
-└────────┬─────────────┘  │
-         ▼                │
-┌──────────────────────┐  │
-│ 3. Gọi Mô Hình ML   │  │
-│  predict(features)  │  │
-│  → Class 0/1/2      │  │
-└────────┬─────────────┘  │
-         ▼                │
-┌──────────────────────┐  │
-│ 4. Lọc Làm Mịn      │  │
-│  5-sample voting    │  │
-│  → Smoothed class   │  │
-└────────┬─────────────┘  │
-         ▼                │
-┌──────────────────────┐  │
-│ 5. Hiển Thị & Log   │  │
-│  - OLED update      │  │
-│  - Serial print     │  │
-└────────┬─────────────┘  │
-         │                │
-         └────────────────┘
-            (delay 1s)
-```
-
-### Suy Diễn Mô Hình
-
-```
-Đầu vào: features[4] = {temperature, humidity, pressure, light}
-                            ↓
-┌───────────────────────────────────────┐
-│   Random Forest Decision Trees (5)    │
-│                                       │
-│  Tree 1        Tree 2    ...  Tree 5 │
-│   │             │              │     │
-│   ▼             ▼              ▼     │
-│  score[3]  score[3]   ...  score[3]  │
-│   │             │              │     │
-│   └──────┬──────┴──────┬───────┘     │
-│          ▼                           │
-│    Average scores                   │
-│    [score0, score1, score2]         │
-│          ↓                          │
-│    argmax → prediction              │
-└───────────────────────────────────────┘
-                ↓
-    Dự đoán cuối cùng: 0/1/2
-```
-
----
-
-## 📈 Hiệu Suất
-
-### Mục Tiêu Sử Dụng Tài Nguyên
-
-```
-RAM Usage:         35.8% (29,320 bytes / 81,920 bytes)
-Flash Usage:       27.6% (288,091 bytes / 1,044,464 bytes)
-Model Size:        3,415 bytes (C header)
-Inference Time:    ~5-10ms per prediction
-Update Interval:   1000ms (1 prediction/second)
-```
-
-### Độ Chính Xác Model
-
-```
-Training Accuracy:    99-100%
-Test Set Accuracy:    ~95-98% (giả lập)
-Inference Accuracy:   ~85-90% (thực tế với sensor noise)
-```
-
----
-
-## 🔍 Xử Lý Sự Cố
-
-### ❌ Lỗi: "ModuleNotFoundError: No module named 'pandas'"
-```bash
-# Giải pháp: Cài đặt dependencies
 pip install pandas numpy scikit-learn m2cgen
 ```
 
-### ❌ Lỗi: "Serial port COM10 not found"
-```bash
-# Giải pháp 1: Xem danh sách cổng
-pio device list
+---
 
-# Giải pháp 2: Chỉ định cổng khác
-pio run -t upload --upload-port COM3
+## 🚀 Hướng Dẫn Vận Hành Hệ Thống
 
-# Giải pháp 3: Kiểm tra USB driver (cài CH340 nếu cần)
-```
+### Quy trình 1: Huấn luyện và Sinh Mã C++ Tự Động (Khuyến Nghị)
 
-### ❌ Lỗi: "Error fetching data from NASA POWER API"
-```
-Nguyên nhân: Mất kết nối internet hoặc API bị lỗi
-Giải pháp:  Script sẽ tự động dùng dữ liệu tổng hợp
-→ Model sẽ được huấn luyện với 900 mẫu synthetic
-```
+Nếu bạn muốn cập nhật mô hình hoặc tải lại dữ liệu mới nhất từ NASA:
 
-### ❌ Lỗi: "Compilation failed - Too much RAM used"
-```
-Nguyên nhân:  Thêm quá nhiều code/thư viện
-Giải pháp:   Xóa thư viện không cần thiết từ platformio.ini
-```
-
-### ❌ Cảm biến không đọc được dữ liệu
-```
-Kiểm tra:
-1. Nối dây đúng theo sơ đồ
-2. Cấp điện 3V3 + GND đầy đủ
-3. I2C pull-up resistors (nếu cần)
-4. Kiểm tra địa chỉ I2C: pio device monitor → Serial output
-```
+1. Di chuyển vào thư mục `training`:
+   ```bash
+   cd training
+   ```
+2. Chạy file Python để huấn luyện:
+   ```bash
+   python train_model.py
+   ```
+   *Script sẽ thực hiện các bước:*
+   - Tải dữ liệu vệ tinh từ NASA POWER API.
+   - Gán nhãn thời tiết theo các quy tắc khí tượng.
+   - Huấn luyện mô hình Random Forest.
+   - Tạo code C++ và lưu trực tiếp vào đường dẫn `firmware/include/model.h`.
 
 ---
 
-## 🔮 Nâng Cấp Tương Lai
+### Quy trình 2: Biên Dịch & Nạp Firmware lên ESP8266
 
-### 🌐 WiFi & Cloud
-- [ ] Gửi dữ liệu lên server cloud
-- [ ] Tạo dashboard web để giám sát remote
-- [ ] Tích hợp Home Assistant
+1. Di chuyển vào thư mục dự án nhúng `firmware`:
+   ```bash
+   cd ../firmware
+   ```
+2. Kết nối ESP8266 với máy tính bằng cáp Micro USB.
+3. Biên dịch và nạp code trực tiếp lên board mạch:
+   ```bash
+   pio run -t upload
+   ```
+   *PlatformIO sẽ tự động tải các thư viện cảm biến được khai báo trong `platformio.ini`, biên dịch dự án nhúng và upload file binary lên ESP8266.*
 
-### 🧠 Model Nâng Cao
-- [ ] Huấn luyện với dữ liệu thực tế 5+ năm
-- [ ] Tăng số lượng cây (Random Forest 10-20 trees)
-- [ ] Dự đoán xu hướng 6-12 tiếng tới
+---
 
-### 🔋 Tối Ưu Năng Lượng
-- [ ] Deep Sleep Mode (chỉ đọc mỗi 5-10 phút)
-- [ ] Chạy trên pin AA/AAA, kéo dài 3-6 tháng
-- [ ] Solar panel charging
+### Quy trình 3: Giám Sát Dữ Liệu Thời Gian Thực
+Để xem các log dữ liệu in qua cổng Serial monitor:
+```bash
+pio device monitor -b 115200
+```
+Màn hình Serial sẽ in các dòng dữ liệu dạng:
+```text
+--- ESP8266 Weather Station ---
+T: 31.2, H: 48.5, P: 1011.8, L: 7250.0 -> Prediction: Sunny
+T: 31.0, H: 49.0, P: 1011.7, L: 7100.0 -> Prediction: Sunny
+T: 22.5, H: 87.2, P: 1004.5, L: 65.0   -> Prediction: Rain
+T: 26.8, H: 65.3, P: 1009.5, L: 380.0  -> Prediction: Cloudy
+```
+*Để thoát chế độ monitor, bấm tổ hợp phím `Ctrl + C` (hoặc `Ctrl + ]` tùy hệ thống).*
 
-### 📡 Cảm Biến Mở Rộng
-- [ ] Tốc độ gió (Anemometer)
-- [ ] Hướng gió (Weather Vane)
-- [ ] Lượng mưa (Rain Gauge)
-- [ ] Tia UV
+---
+
+## 📊 Cơ Chế Hoạt Động Của Hệ Thống
+
+### 1. Luồng Hoạt Động (System Flow)
+
+```mermaid
+graph TD
+    A[Bắt đầu] --> B[Khởi tạo Serial, I2C, Màn hình OLED & Cảm biến]
+    B --> C[Chờ 1 giây]
+    C --> D[Đọc 4 thông số: Temp, Humid, Press, Light]
+    D --> E{Dữ liệu hợp lệ?}
+    E -- Không --> F[Hiển thị Sensor Error lên OLED]
+    E -- Có --> G[Gán mảng features 4 phần tử]
+    G --> H[Gọi hàm predict features từ model.h]
+    H --> I[Đưa kết quả vào Buffer cửa sổ trượt kích thước 5]
+    I --> J[Áp dụng Voting Filter: lấy kết quả xuất hiện nhiều nhất]
+    J --> K[Cập nhật giao diện màn hình OLED SSD1306]
+    J --> L[In thông số và kết quả ra Serial Monitor]
+    K --> C
+    L --> C
+```
+
+### 2. Thuật Toán Lọc Nhiễu (Smoothing Voting Filter)
+
+Để ngăn hiện tượng nhảy kết quả liên tục do cảm biến bị nhiễu tức thời (ví dụ: bóng người lướt qua làm BH1750 giảm đột ngột), mã nguồn nhúng áp dụng một bộ lọc làm mịn cửa sổ trượt kích thước 5:
+
+```text
+Mẫu mới nhận (kết quả suy diễn): Rain (1)
+                                 │
+                                 ▼
+Buffer cửa sổ trượt (5 mẫu): [Sunny, Sunny, Sunny, Cloudy, Rain]
+                                 │
+                                 ├── Bầu chọn: Sunny (3 lần), Cloudy (1 lần), Rain (1 lần)
+                                 ▼
+Dự đoán được chọn cuối cùng: Sunny (0)
+```
+Giải thuật này được viết trực tiếp trong file `main.cpp` giúp nâng cao đáng kể độ tin cậy thực tế ngoài môi trường.
+
+---
+
+## ⚠️ Giới Hạn Khi Chạy Trong Nhà & Giải Pháp
+
+Mô hình ML được huấn luyện dựa trên dữ liệu thời tiết **ngoài trời** của NASA. Khi bạn mang thiết bị chạy thử **trong nhà**, một số trường hợp sai lệch có thể xảy ra:
+
+### ❌ Tình Huống Dự Đoán Sai Đặc Trưng
+- **Hiện tượng:** Bạn ở trong phòng kín bật điều hòa nhiệt độ thấp, rèm cửa che bớt ánh sáng khiến phòng tối. Cảm biến đọc được: Ánh sáng thấp (`Light < 243 Lux`), Áp suất giảm do hệ thống thông gió (`Pressure < 1007.5 hPa`).
+- **Mô hình kết luận:** **🌧️ RAIN (Mưa)**.
+- **Thực tế:** Ngoài trời hoàn toàn khô ráo và nắng!
+
+### 🔧 Các Hướng Cải Tiến Đề Xuất
+1. **Đặt Cảm Biến Ở Vị Trí Phù Hợp:** Đặt cảm biến ánh sáng và áp suất ở sát cửa sổ hoặc ban công để đo đúng cường độ ánh sáng tự nhiên.
+2. **Logic Cứng Cường Hóa (Hybrid Rules):** Sửa đổi hàm `loop()` trong `main.cpp` để giới hạn cứng. Ví dụ: Chỉ dự đoán Rain khi đồng thời độ ẩm phải lớn hơn 75% (`humidity > 75`).
+3. **Huấn Luyện Lớp "Trong Nhà" (Indoor Class):** Thu thập thêm dữ liệu môi trường trong nhà và gán nhãn lớp thứ 4 (Indoor) để mô hình học cách bỏ qua các trạng thái nhiễu này.
+
+---
+
+## 🔧 Phụ Lục: Các Lệnh Cần Thiết Trong PlatformIO
+
+Dưới đây là bảng tra cứu nhanh các câu lệnh CLI hữu ích khi làm việc với PlatformIO:
+
+| Mục tiêu | Câu lệnh |
+| :--- | :--- |
+| **Xem danh sách cổng COM kết nối** | `pio device list` |
+| **Biên dịch thử firmware (Không nạp)** | `pio run` |
+| **Biên dịch và nạp code** | `pio run -t upload` |
+| **Nạp code qua cổng COM cụ thể** | `pio run -t upload --upload-port COM10` |
+| **Dọn dẹp các file rác sinh ra khi build** | `pio run --target clean` |
+| **Mở monitor xem log ở tốc độ 115200** | `pio device monitor -b 115200` |
 
 ---
 
 ## 📚 Tài Liệu Tham Khảo
 
-### Về ESP8266
-- [ESP8266 Arduino Core](https://github.com/esp8266/Arduino)
-- [NodeMCU Pinout](https://github.com/nodemcu/nodemcu-devkit)
-
-### Về Machine Learning
-- [scikit-learn Random Forest](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html)
-- [m2cgen Documentation](https://github.com/BayesWitnesses/m2cgen)
-
-### Về NASA POWER API
-- [NASA POWER API Docs](https://power.larc.nasa.gov/)
-- [Data Parameters](https://power.larc.nasa.gov/docs/methodology/parameters/)
-
-### Thư Viện Arduino
-- [DHT Sensor Library](https://github.com/adafruit/DHT-sensor-library)
-- [Adafruit BMP085 Library](https://github.com/adafruit/Adafruit-BMP085-Library)
-- [BH1750 Light Sensor](https://github.com/claws/BH1750)
-- [Adafruit SSD1306 OLED](https://github.com/adafruit/Adafruit_SSD1306)
-
----
-
-## 📝 License
-
-MIT License - Tự do sử dụng cho mục đích thương mại và phi thương mại
-
----
-
-## 👤 Tác Giả
-
-**Hương Nhựng** - Dự án IoT & Machine Learning  
-📧 Email: your-email@example.com  
-🔗 GitHub: [@your-github](https://github.com/your-github)
-
----
-
-## 🤝 Đóng Góp
-
-Nếu bạn muốn đóng góp:
-1. Fork dự án
-2. Tạo branch feature (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Mở Pull Request
-
----
-
-**Made with ❤️ for IoT & ML Enthusiasts**
-#   H e T h o n g N h u n g  
- 
+- Thư viện C-code hóa mô hình Machine Learning: [m2cgen GitHub](https://github.com/BayesWitnesses/m2cgen).
+- Cơ sở dữ liệu khí tượng vệ tinh: [NASA POWER API Portal](https://power.larc.nasa.gov/).
+- Thư viện đọc cảm biến: [Adafruit DHT Sensor](https://github.com/adafruit/DHT-sensor-library), [Adafruit BMP085](https://github.com/adafruit/Adafruit-BMP085-Library), [BH1750 Light Library](https://github.com/claws/BH1750).
+- Hệ điều hành & Thư viện vẽ OLED: [Adafruit SSD1306 Driver](https://github.com/adafruit/Adafruit_SSD1306).

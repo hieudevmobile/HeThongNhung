@@ -13,6 +13,8 @@ BH1750 lightMeter;
 
 void initSensors() {
     Wire.begin();
+    // ← BẠN VIẾT: Khởi tạo bus I2C
+                   // Mặc định: SCL=D1(GPIO5), SDA=D2(GPIO4), 100kHz
     dht.begin();
     Serial.println("--- Sensor Initialization ---");
     
